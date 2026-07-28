@@ -95,7 +95,10 @@ width:100%;
 height:auto
 }
 .card.flipped{transform:rotateY(180deg)}
-.card.matched{opacity:.7;pointer-events:none}
+.card.matched{
+animation:slide-out-up .7s cubic-bezier(.5,0,.1,1) forwards;
+pointer-events:none
+}
 .card .front,.card .back{
 position:absolute;
 inset:0;
@@ -123,6 +126,10 @@ transform:scale(1.03) rotateY(5deg)
 background:#ffe44d
 }
 .card.disabled{cursor:default;pointer-events:none}
+@keyframes slide-out-up{
+0%{transform:rotateY(180deg) translateY(0);opacity:1}
+100%{transform:rotateY(180deg) translateY(-80vh);opacity:0}
+}
 .win-message{
 display:none;
 background:#fff;
@@ -313,17 +320,20 @@ function checkMatch() {
     else state.botScore++
 
     state.flipped = []
+    state.locked = true
     updateUI()
 
     if (state.matchedCount === state.cards.length) {
-      endGame()
+      setTimeout(endGame, 800)
       return
     }
 
-    state.locked = false
-    if (state.turn === 'bot') {
-      setTimeout(doBotTurn, 800)
-    }
+    setTimeout(() => {
+      state.locked = false
+      if (state.turn === 'bot') {
+        setTimeout(doBotTurn, 600)
+      }
+    }, 800)
   } else {
     const flipped = [...state.flipped]
     setTimeout(() => {
