@@ -1,0 +1,446 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Memory Game</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{
+font-family:system-ui,-apple-system,sans-serif;
+min-height:100vh;
+transition:background-color .5s ease;
+display:flex;
+flex-direction:column;
+align-items:center;
+background-color:#e63946
+}
+body.bot-turn{background-color:#457b9d}
+.container{
+max-width:800px;
+width:100%;
+padding:20px;
+display:flex;
+flex-direction:column;
+align-items:center;
+gap:20px
+}
+h1{
+color:#fff;
+text-shadow:2px 2px 4px rgba(0,0,0,.3);
+font-size:2rem
+}
+.controls{
+display:flex;
+gap:10px;
+align-items:center;
+flex-wrap:wrap;
+justify-content:center
+}
+.controls select,.controls button{
+padding:10px 20px;
+font-size:1rem;
+border:none;
+border-radius:8px;
+cursor:pointer;
+font-weight:600
+}
+.controls select{background:#fff;color:#333}
+.controls button{background:#1d3557;color:#fff}
+.controls button:hover{background:#264573}
+.scoreboard{
+display:flex;
+gap:40px;
+background:rgba(255,255,255,.15);
+padding:10px 30px;
+border-radius:12px;
+backdrop-filter:blur(4px)
+}
+.score{
+text-align:center;
+color:#fff;
+font-size:1.1rem;
+font-weight:600
+}
+.score span{
+font-size:1.8rem;
+display:block
+}
+.score.active{text-decoration:underline;text-underline-offset:4px}
+.turn-indicator{
+color:#fff;
+font-size:1.2rem;
+font-weight:600;
+text-shadow:1px 1px 3px rgba(0,0,0,.3);
+padding:8px 20px;
+border-radius:8px;
+background:rgba(0,0,0,.2)
+}
+.board{
+display:grid;
+gap:8px;
+perspective:800px
+}
+.card{
+aspect-ratio:1;
+border-radius:10px;
+cursor:pointer;
+position:relative;
+transform-style:preserve-3d;
+transition:transform .4s ease
+}
+.card.flipped{transform:rotateY(180deg)}
+.card.matched{opacity:.7;pointer-events:none}
+.card .front,.card .back{
+position:absolute;
+inset:0;
+border-radius:10px;
+backface-visibility:hidden;
+display:flex;
+align-items:center;
+justify-content:center;
+font-size:2rem
+}
+.card .front{
+background:#1d3557;
+color:#a8dadc;
+transform:rotateY(180deg)
+}
+.card .back{
+background:linear-gradient(135deg,#a8dadc,#457b9d);
+color:#1d3557;
+font-size:1.5rem
+}
+.card:not(.flipped):not(.matched):hover .back{
+background:linear-gradient(135deg,#b8e8ea,#558b9d)
+}
+.card.disabled{cursor:default;pointer-events:none}
+.win-message{
+display:none;
+background:#fff;
+padding:30px 40px;
+border-radius:16px;
+text-align:center;
+box-shadow:0 10px 30px rgba(0,0,0,.3);
+position:fixed;
+top:50%;
+left:50%;
+transform:translate(-50%,-50%);
+z-index:100
+}
+.win-message.show{display:block}
+.win-message h2{font-size:1.8rem;margin-bottom:10px}
+.win-message p{font-size:1.2rem;color:#555;margin-bottom:20px}
+.win-message .final-score{display:flex;gap:30px;justify-content:center;margin:20px 0}
+.win-message .final-score div{text-align:center}
+.win-message .final-score .label{font-size:.9rem;color:#888}
+.win-message .final-score .value{font-size:2rem;font-weight:700}
+.win-message button{
+padding:12px 30px;
+font-size:1.1rem;
+border:none;
+border-radius:8px;
+background:#1d3557;
+color:#fff;
+cursor:pointer;
+font-weight:600
+}
+.win-message button:hover{background:#264573}
+@media(max-width:600px){
+.container{padding:10px}
+h1{font-size:1.5rem}
+.score span{font-size:1.4rem}
+.card .front,.card .back{font-size:1.5rem}
+.board{gap:5px}
+}
+</style>
+</head>
+<body>
+<div class="container">
+<h1>Memory Game</h1>
+<div class="controls">
+<select id="difficulty">
+<option value="easy">Easy (4x4)</option>
+<option value="medium">Medium (5x4)</option>
+<option value="hard">Hard (6x6)</option>
+</select>
+<button id="startBtn">New Game</button>
+</div>
+<div class="turn-indicator" id="turnIndicator">Your Turn</div>
+<div class="scoreboard">
+<div class="score active" id="playerScore">You<span>0</span></div>
+<div class="score" id="botScore">Bot<span>0</span></div>
+</div>
+<div class="board" id="board"></div>
+</div>
+<div class="win-message" id="winMessage">
+<h2 id="winTitle">Game Over!</h2>
+<div class="final-score">
+<div><div class="label">You</div><div class="value" id="finalPlayer">0</div></div>
+<div><div class="label">Bot</div><div class="value" id="finalBot">0</div></div>
+</div>
+<p id="winResult"></p>
+<button id="playAgainBtn">Play Again</button>
+</div>
+
+<script>
+const ALL_EMOJI = ['🐶','🐱','🦁','🐸','🐵','🐼','🐨','🐯','🐮','🐷','🐔','🐙','🦋','🐢','🐍','🦜','🐬','🦊']
+
+const DIFFICULTY = {
+  easy: { cols: 4, pairs: 8 },
+  medium: { cols: 5, pairs: 10 },
+  hard: { cols: 6, pairs: 18 },
+}
+
+let state
+
+const board = document.getElementById('board')
+const difficultySelect = document.getElementById('difficulty')
+const startBtn = document.getElementById('startBtn')
+const turnIndicator = document.getElementById('turnIndicator')
+const playerScoreEl = document.getElementById('playerScore')
+const botScoreEl = document.getElementById('botScore')
+const winMessage = document.getElementById('winMessage')
+const winTitle = document.getElementById('winTitle')
+const finalPlayer = document.getElementById('finalPlayer')
+const finalBot = document.getElementById('finalBot')
+const winResult = document.getElementById('winResult')
+const playAgainBtn = document.getElementById('playAgainBtn')
+
+function shuffle(arr) {
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]]
+  }
+  return arr
+}
+
+function initGame(difficulty) {
+  const config = DIFFICULTY[difficulty]
+  const emojiPool = ALL_EMOJI.slice(0, config.pairs)
+  let deck = [...emojiPool, ...emojiPool]
+  deck = shuffle(deck)
+
+  state = {
+    cards: deck.map((emoji, i) => ({ emoji, matched: false, id: i })),
+    flipped: [],
+    locked: false,
+    playerScore: 0,
+    botScore: 0,
+    turn: 'player',
+    matchedCount: 0,
+    gameOver: false,
+    difficulty,
+    botMemory: {},
+  }
+
+  renderBoard(config.cols)
+  updateUI()
+  winMessage.classList.remove('show')
+  document.body.classList.remove('bot-turn')
+}
+
+function renderBoard(cols) {
+  board.style.gridTemplateColumns = `repeat(${cols}, 1fr)`
+  board.innerHTML = ''
+
+  state.cards.forEach((card, i) => {
+    const el = document.createElement('div')
+    el.className = 'card'
+    el.dataset.index = i
+
+    const front = document.createElement('div')
+    front.className = 'front'
+    front.textContent = card.emoji
+
+    const back = document.createElement('div')
+    back.className = 'back'
+    back.textContent = '?'
+
+    el.appendChild(front)
+    el.appendChild(back)
+    el.addEventListener('click', () => onCardClick(i))
+    board.appendChild(el)
+  })
+}
+
+function onCardClick(index) {
+  if (state.locked || state.gameOver || state.turn !== 'player') return
+  const card = state.cards[index]
+  if (card.matched || state.flipped.includes(index)) return
+
+  flipCard(index)
+
+  if (state.flipped.length === 2) {
+    state.locked = true
+    setTimeout(checkMatch, 500)
+  }
+}
+
+function flipCard(index) {
+  state.flipped.push(index)
+  board.children[index].classList.add('flipped')
+}
+
+function getCardEl(index) { return board.children[index] }
+
+function checkMatch() {
+  const [a, b] = state.flipped
+  const cardA = state.cards[a]
+  const cardB = state.cards[b]
+
+  if (state.difficulty !== 'easy') {
+    storeInBotMemory(a, cardA.emoji)
+    storeInBotMemory(b, cardB.emoji)
+  }
+
+  if (cardA.emoji === cardB.emoji) {
+    cardA.matched = true
+    cardB.matched = true
+    state.matchedCount += 2
+    getCardEl(a).classList.add('matched')
+    getCardEl(b).classList.add('matched')
+
+    if (state.turn === 'player') state.playerScore++
+    else state.botScore++
+
+    state.flipped = []
+    updateUI()
+
+    if (state.matchedCount === state.cards.length) {
+      endGame()
+      return
+    }
+
+    state.locked = false
+    if (state.turn === 'bot') {
+      setTimeout(doBotTurn, 800)
+    }
+  } else {
+    const flipped = [...state.flipped]
+    setTimeout(() => {
+      flipped.forEach(i => getCardEl(i).classList.remove('flipped'))
+      state.flipped = []
+      state.locked = false
+      state.turn = state.turn === 'player' ? 'bot' : 'player'
+      updateUI()
+      if (state.turn === 'bot') {
+        setTimeout(doBotTurn, 600)
+      }
+    }, 800)
+  }
+}
+
+function storeInBotMemory(index, emoji) {
+  if (!state.botMemory[emoji]) state.botMemory[emoji] = []
+  if (!state.botMemory[emoji].includes(index)) {
+    state.botMemory[emoji].push(index)
+  }
+}
+
+function doBotTurn() {
+  if (state.gameOver || state.turn !== 'bot') return
+  state.locked = true
+
+  const unknown = []
+  state.cards.forEach((card, i) => {
+    if (!card.matched && !state.flipped.includes(i)) {
+      unknown.push(i)
+    }
+  })
+
+  if (unknown.length < 2) return
+
+  let pick1, pick2
+
+  if (state.difficulty === 'easy') {
+    pick1 = unknown[Math.floor(Math.random() * unknown.length)]
+    const rest = unknown.filter(i => i !== pick1)
+    pick2 = rest[Math.floor(Math.random() * rest.length)]
+  } else {
+    let knownPair = null
+    for (const [emoji, indices] of Object.entries(state.botMemory)) {
+      const avail = indices.filter(i => !state.cards[i].matched && !state.flipped.includes(i))
+      if (avail.length >= 2) {
+        knownPair = [avail[0], avail[1]]
+        break
+      }
+    }
+
+    if (knownPair) {
+      [pick1, pick2] = knownPair
+    } else {
+      pick1 = unknown[Math.floor(Math.random() * unknown.length)]
+      const emoji = state.cards[pick1].emoji
+      const match = (state.botMemory[emoji] || [])
+        .filter(i => i !== pick1 && !state.cards[i].matched && !state.flipped.includes(i))
+      if (match.length > 0) {
+        pick2 = match[0]
+      } else {
+        const rest = unknown.filter(i => i !== pick1)
+        pick2 = rest[Math.floor(Math.random() * rest.length)]
+      }
+    }
+  }
+
+  setTimeout(() => {
+    if (state.gameOver) return
+    flipCard(pick1)
+    setTimeout(() => {
+      if (state.gameOver) return
+      flipCard(pick2)
+      setTimeout(() => {
+        if (state.gameOver) return
+        checkMatch()
+      }, 400)
+    }, 500)
+  }, 500)
+}
+
+function updateUI() {
+  if (state.turn === 'player') {
+    turnIndicator.textContent = 'Your Turn'
+    document.body.classList.remove('bot-turn')
+  } else {
+    turnIndicator.textContent = "Bot's Turn..."
+    document.body.classList.add('bot-turn')
+  }
+  playerScoreEl.querySelector('span').textContent = state.playerScore
+  botScoreEl.querySelector('span').textContent = state.botScore
+  document.querySelectorAll('.score').forEach(el => el.classList.remove('active'))
+  ;(state.turn === 'player' ? playerScoreEl : botScoreEl).classList.add('active')
+}
+
+function endGame() {
+  state.gameOver = true
+  state.locked = true
+
+  finalPlayer.textContent = state.playerScore
+  finalBot.textContent = state.botScore
+
+  if (state.playerScore > state.botScore) {
+    winTitle.textContent = 'You Win!'
+    winResult.textContent = 'You beat the bot!'
+  } else if (state.botScore > state.playerScore) {
+    winTitle.textContent = 'Bot Wins!'
+    winResult.textContent = 'Better luck next time!'
+  } else {
+    winTitle.textContent = "It's a Draw!"
+    winResult.textContent = 'Evenly matched!'
+  }
+
+  winMessage.classList.add('show')
+}
+
+function startGame() {
+  winMessage.classList.remove('show')
+  initGame(difficultySelect.value)
+}
+
+startBtn.addEventListener('click', startGame)
+playAgainBtn.addEventListener('click', startGame)
+
+initGame('easy')
+</script>
+</body>
+</html>
